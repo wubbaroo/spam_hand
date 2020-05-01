@@ -1,0 +1,115 @@
+Sub ForwardSpam()
+
+Dim Answer As String
+Dim MyNote As String
+On Error GoTo ERR_HANDLER
+Dim Exp As Outlook.Explorer
+Dim Bars As Office.CommandBars
+Dim Cmd As Office.CommandBarButton
+Dim Inbox As Outlook.MAPIFolder
+Dim TempFolder As Outlook.MAPIFolder
+Dim CurrFolder As Outlook.MAPIFolder
+Dim Items As Outlook.Items
+Dim Item As Object
+Dim Sel As Outlook.Selection
+Dim cSel As VBA.Collection
+Dim i&, Count&
+Dim Preview As Boolean
+Dim IsOL2010OrHigher As Boolean
+
+'Counts select items for MessageBox
+c = Application.ActiveExplorer.Selection.Count
+
+'Place your text here
+MyNote = "You are about to report " & c & " message(s) as SPAM to the security team, and add the sender(s) to your block sender list. Please only use this button to report malicious email(s) or SPAM. Would you like to proceed?"
+    
+'Display MessageBox to report SPAM
+Answer = MsgBox(MyNote, vbQuestion + vbYesNo, "SPAM Reporting")
+
+'If statement for MessageBox response
+If Answer = vbNo Then
+   Exit Sub
+Else
+    'Attach and emails message
+    On Error Resume Next
+
+    Dim objItem As Outlook.MailItem
+
+    If Application.ActiveExplorer.Selection.Count = 0 Then
+        MsgBox ("No item selected")
+        Exit Sub
+    End If
+
+    For Each objItem In Application.ActiveExplorer.Selection
+            
+        Set objMsg = Application.CreateItem(olMailItem)
+            With objMsg
+            .Attachments.Add objItem, olEmbeddeditem
+            .Subject = "SPAM"
+            .To = "<email_address_of_analysis>"
+            .Send
+                        
+    End With
+    Next
+   
+    'Moves select to junk folder, and addes sender to block list
+    IsOL2010OrHigher = (Left(Application.Version, 2) > 12)
+    Set Exp = Application.ActiveExplorer
+    Set CurrFolder = Exp.CurrentFolder
+    Preview = Exp.IsPaneVisible(olPreview)
+    Set Bars = Exp.CommandBars
+    If IsOL2010OrHigher = False Then
+    Set Cmd = Bars.FindControl(, 9786)
+    If Cmd Is Nothing Then Err.Raise 1000, "Cannot find the commandbar button."
+    End If
+
+    Set Sel = Exp.Selection
+    Count = Sel.Count
+    Select Case Count
+    Case 0: Err.Raise 1000, , "No message is selected."
+    Case 1
+    If IsOL2010OrHigher Then
+      Bars.ExecuteMso "JunkEmailAddToBlockedSendersList"
+    Else
+      Cmd.Execute
+    End If
+    Case Else
+        Set cSel = New VBA.Collection
+        For Each Item In Sel
+        cSel.Add Item
+        Next
+    Set Sel = Nothing
+    Set Inbox = Application.Session.GetDefaultFolder(olFolderInbox)
+    Set TempFolder = Inbox.Folders("temp spam")
+    If TempFolder Is Nothing Then
+      Set TempFolder = Inbox.Folders.Add("temp spam")
+    End If
+    Set Exp.CurrentFolder = TempFolder
+    Exp.ShowPane olPreview, False
+    For i = Count To 1 Step -1
+      Set Item = cSel(i)
+      Item.Move TempFolder
+      Set Item = Nothing
+      DoEvents
+      If TempFolder.Items.Count = 1 Then
+        If IsOL2010OrHigher Then
+          Bars.ExecuteMso "JunkEmailAddToBlockedSendersList"
+        Else
+          Cmd.Execute
+        End If
+      End If
+      DoEvents
+    Next
+    Set Exp.CurrentFolder = CurrFolder
+    Exp.ShowPane olPreview, Preview
+    If TempFolder.Items.Count = 0 Then
+      TempFolder.Delete
+    End If
+  End Select
+  Exit Sub
+ERR_HANDLER:
+  If Err.Number = &H8004010F Then Resume Next
+  MsgBox Err.Description
+  
+End If
+End Sub
